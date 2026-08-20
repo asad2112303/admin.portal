@@ -51,7 +51,14 @@ export async function POST(request: Request) {
   if (!isAdminConfigured()) {
     console.error("[admin/login] not configured. Missing:", missingAdminConfig().join(", "));
     return NextResponse.json(
-      { ok: false, message: "The admin portal is not configured." },
+      {
+        ok: false,
+        // Names the missing variables. This endpoint is reachable only before
+        // anyone can sign in, and a variable NAME is not a secret — whereas a
+        // silent rejection of correct credentials wastes hours.
+        message: `The admin portal is not configured. Missing: ${missingAdminConfig().join(", ")}.`,
+        code: "not_configured",
+      },
       { status: 503 },
     );
   }
