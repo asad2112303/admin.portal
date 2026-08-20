@@ -58,6 +58,25 @@ npm install
 npm run dev        # http://localhost:22431
 ```
 
+### 4. Deploy
+
+```bash
+./scripts/push-env-to-vercel.sh
+```
+
+Uploads all six variables to Vercel and redeploys. The redeploy is required
+rather than optional: `NEXT_PUBLIC_*` values are inlined at build time, so
+setting them in the dashboard has no effect until the project is rebuilt.
+
+To check a deployment:
+
+```bash
+curl -s https://<your-admin-domain>/api/health?check=config
+```
+
+`"status":"ready"` means the login will work. Anything else names exactly which
+variables are missing, without disclosing any value.
+
 ## Security
 
 **Authorization is server-side.** Every `/api` handler and the `(protected)`
