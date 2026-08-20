@@ -1,0 +1,16 @@
+node_modules
+.next
+out
+build
+.DS_Store
+*.pem
+
+# Environment files: these hold the Supabase secret key and the admin password
+# hash. Never commit them.
+.env
+.env.*
+!.env.example
+
+.vercel
+*.tsbuildinfo
+next-env.d.ts
