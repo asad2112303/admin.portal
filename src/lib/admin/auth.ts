@@ -6,7 +6,7 @@ import { createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypt
  * Single-account admin authentication.
  *
  * One email and one password, supplied by configuration rather than stored in a
- * user table. There is no signup and no Supabase Auth involvement.
+ * user table. There is no signup and no separate user store.
  *
  * How the pieces fit:
  *   ADMIN_EMAIL          the one address permitted to sign in

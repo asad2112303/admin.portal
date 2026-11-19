@@ -45,6 +45,9 @@ const nextConfig = {
   reactStrictMode: true,
   // Do not advertise the framework/version to attackers.
   poweredByHeader: false,
+  // The MariaDB driver opens raw sockets and loads character-set tables at
+  // runtime, so it is loaded with Node's own require instead of being bundled.
+  serverExternalPackages: ["mariadb"],
   images: {
     formats: ["image/avif", "image/webp"],
   },

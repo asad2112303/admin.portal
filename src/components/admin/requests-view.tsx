@@ -7,7 +7,7 @@ import { TableSkeleton } from "@/components/admin/skeletons";
 import RequestDrawer from "@/components/admin/request-drawer";
 import { useNewRequestNotifications } from "@/components/admin/use-new-request-count";
 import { callbackServiceOptions } from "@/data/callback-services";
-import { CALLBACK_STATUSES, formatRequestNo, type CallbackStatus } from "@/lib/supabase/types";
+import { CALLBACK_STATUSES, formatRequestNo, type CallbackStatus } from "@/lib/db/types";
 import { STATUS_LABELS, STATUS_STYLES, displayPhone, formatReceived } from "@/lib/admin/format";
 import { cn } from "@/lib/utils";
 

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/auth";
-import { createAdminSupabase, SupabaseNotConfiguredError } from "@/lib/supabase/server";
-import { CALLBACK_STATUSES, type CallbackStatus } from "@/lib/supabase/types";
+import { getCallbackRequest, setCallbackStatus } from "@/lib/db/client";
+import { databaseFailure } from "@/lib/db/respond";
+import { CALLBACK_STATUSES, type CallbackStatus } from "@/lib/db/types";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -19,52 +20,26 @@ export async function GET(_request: Request, { params }: RouteParams) {
   if (!UUID.test(id)) return NextResponse.json({ ok: false, message: "Not found." }, { status: 404 });
 
   try {
-    // Server-only client. requireAdmin() above is the authorization boundary:
-    // the database cannot make this call, because the admin is not a Supabase
-    // user and RLS has no identity to match them against.
-    const supabase = createAdminSupabase();
-
-    const { data: callbackRequest, error } = await supabase
-      .from("callback_requests")
-      .select("*")
-      .eq("id", id)
-      .maybeSingle();
-
-    if (error) throw error;
-    if (!callbackRequest) return NextResponse.json({ ok: false, message: "Not found." }, { status: 404 });
-
-    const { data: activity } = await supabase
-      .from("callback_request_activity")
-      .select("*")
-      .eq("callback_request_id", id)
-      .order("created_at", { ascending: true });
-
-    return NextResponse.json({ ok: true, request: callbackRequest, activity: activity ?? [] });
+    // Read through the secure views: a request outside this account's row
+    // policy is indistinguishable from one that does not exist.
+    const found = await getCallbackRequest(id.toLowerCase());
+    if (!found) return NextResponse.json({ ok: false, message: "Not found." }, { status: 404 });
+    return NextResponse.json({ ok: true, request: found.request, activity: found.activity });
   } catch (error) {
-    if (error instanceof SupabaseNotConfiguredError) {
-      // Distinguish "not set up yet" from "something broke". Without this the
-      // portal reports a generic failure and gives no clue what to fix.
-      console.error("[admin/callback-request] not configured:", error.message);
-      return NextResponse.json(
-        {
-          ok: false,
-          message:
-            "The database connection is not configured. Add SUPABASE_SECRET_KEY to .env.local and restart the server.",
-        },
-        { status: 503 },
-      );
-    }
-    console.error("[admin/callback-request] fetch failed:", error instanceof Error ? error.message : error);
-    return NextResponse.json({ ok: false, message: "Could not load the request." }, { status: 500 });
+    return databaseFailure(error, "admin/callback-request", "Could not load the request.");
   }
 }
 
 /**
  * Update a request's status.
  *
- * The status is compared before writing so a no-op change does not add a
- * misleading entry to the timeline. contacted_at and completed_at are stamped
- * by a database trigger, so they cannot drift from the status they describe.
+ * set_callback_status() does the whole job in the database, in one
+ * transaction: it checks this account's update policy (for the current AND
+ * the new status), skips a no-op so the timeline gets no misleading entry,
+ * changes the status, and writes the timeline entry with the signed-in
+ * admin's email. contacted_at and completed_at are stamped by a trigger.
+ * (In the Supabase version the update and the timeline entry were two
+ * separate calls, so a failure between them lost the audit record.)
  */
 export async function PATCH(request: Request, { params }: RouteParams) {
   const auth = await requireAdmin();
@@ -83,54 +58,15 @@ export async function PATCH(request: Request, { params }: RouteParams) {
       return NextResponse.json({ ok: false, message: "Invalid status." }, { status: 422 });
     }
 
-    const supabase = createAdminSupabase();
-
-    const { data: current } = await supabase
-      .from("callback_requests")
-      .select("id, status")
-      .eq("id", id)
-      .maybeSingle<{ id: string; status: CallbackStatus }>();
-
-    if (!current) return NextResponse.json({ ok: false, message: "Not found." }, { status: 404 });
-
-    if (body.status !== current.status) {
-      const { error } = await supabase
-        .from("callback_requests")
-        .update({ status: body.status })
-        .eq("id", id);
-      if (error) throw error;
-
-      await supabase.from("callback_request_activity").insert({
-        callback_request_id: id,
-        action: "status_changed",
-        old_value: current.status,
-        new_value: body.status,
-        actor_email: auth.email,
-      });
+    const result = await setCallbackStatus(id.toLowerCase(), body.status as CallbackStatus, auth.email);
+    if (!result.ok) {
+      if (result.refusal === "not_found") return NextResponse.json({ ok: false, message: "Not found." }, { status: 404 });
+      if (result.refusal === "invalid_status") return NextResponse.json({ ok: false, message: "Invalid status." }, { status: 422 });
+      throw new Error(`Unexpected refusal from set_callback_status: ${result.refusal}`);
     }
 
-    const { data: updated } = await supabase
-      .from("callback_requests")
-      .select("*")
-      .eq("id", id)
-      .single();
-
-    return NextResponse.json({ ok: true, request: updated });
+    return NextResponse.json({ ok: true, request: result.request });
   } catch (error) {
-    if (error instanceof SupabaseNotConfiguredError) {
-      // Distinguish "not set up yet" from "something broke". Without this the
-      // portal reports a generic failure and gives no clue what to fix.
-      console.error("[admin/callback-request] not configured:", error.message);
-      return NextResponse.json(
-        {
-          ok: false,
-          message:
-            "The database connection is not configured. Add SUPABASE_SECRET_KEY to .env.local and restart the server.",
-        },
-        { status: 503 },
-      );
-    }
-    console.error("[admin/callback-request] update failed:", error instanceof Error ? error.message : error);
-    return NextResponse.json({ ok: false, message: "Could not update the request." }, { status: 500 });
+    return databaseFailure(error, "admin/callback-request", "Could not update the request.");
   }
 }

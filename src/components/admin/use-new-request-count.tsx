@@ -5,10 +5,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 /**
  * Live-ish count of unhandled ("new") requests, used by the sidebar badge.
  *
- * Polled through /api/dashboard rather than Supabase Realtime. Realtime
+ * Polled through /api/dashboard rather than a live database connection. That
  * would require the browser to hold a database identity, and it deliberately
- * has none: the admin session is a server-side cookie, and no policy grants the
- * publishable key any access to patient data. Polling keeps that property.
+ * has none: the admin session is a server-side cookie, and only the server
+ * holds database credentials. Polling keeps that property.
  *
  * 30s is frequent enough for a call centre and costs one HEAD-style count query.
  */
