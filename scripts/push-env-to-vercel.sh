@@ -19,10 +19,12 @@ cd "$(dirname "$0")/.."
 ENV_FILE=".env.local"
 ENVIRONMENTS=(production preview development)
 
+# Only for while the portal is still hosted on Vercel. From Vercel the
+# database is reached over TCP (TLS always on), hence DATABASE_HOST.
 REQUIRED=(
-  NEXT_PUBLIC_SUPABASE_URL
-  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
-  SUPABASE_SECRET_KEY
+  DATABASE_HOST
+  DATABASE_USER
+  DATABASE_PASSWORD
   ADMIN_EMAIL
   ADMIN_PASSWORD_HASH
   ADMIN_SESSION_SECRET
@@ -52,7 +54,7 @@ if [ ${#missing[@]} -gt 0 ]; then
   echo "  ✗ Missing locally: ${missing[*]}"
   echo
   echo "    For the ADMIN_* values run:  npm run set-admin-password"
-  echo "    For the Supabase values see: .env.example"
+  echo "    For the DATABASE_* values see: .env.example"
   echo
   exit 1
 fi

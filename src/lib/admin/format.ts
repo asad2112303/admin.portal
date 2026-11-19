@@ -1,5 +1,5 @@
 import { normalizePakistaniPhone, formatPakistaniPhone } from "@/lib/phone";
-import type { CallbackStatus } from "@/lib/supabase/types";
+import type { CallbackStatus } from "@/lib/db/types";
 
 /**
  * Display helpers for the admin dashboard.

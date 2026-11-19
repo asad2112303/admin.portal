@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { X, Phone, MessageCircle, AlertTriangle } from "lucide-react";
 import { DetailSkeleton } from "@/components/admin/skeletons";
-import { CALLBACK_STATUSES, formatRequestNo, type CallbackStatus } from "@/lib/supabase/types";
+import { CALLBACK_STATUSES, formatRequestNo, type CallbackStatus } from "@/lib/db/types";
 import {
   STATUS_LABELS,
   STATUS_STYLES,

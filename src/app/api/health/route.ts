@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { missingAdminConfig } from "@/lib/admin/auth";
-import { missingPublicConfig, supabaseServiceKey } from "@/lib/supabase/env";
+import { missingDatabaseConfig } from "@/lib/db/config";
 
 /**
  * Liveness and readiness probe.
@@ -8,8 +8,9 @@ import { missingPublicConfig, supabaseServiceKey } from "@/lib/supabase/env";
  * `GET /api/health` confirms the server is up and exposes nothing else.
  *
  * `GET /api/health?check=config` reports which configuration is missing and
- * whether the database is actually reachable. It returns booleans and variable
- * NAMES only — never a value, prefix or length — so it cannot leak a key.
+ * whether the database works. It returns variable NAMES and fixed category
+ * words only — never a value, an error message, a host or an account name —
+ * so it cannot leak anything. The underlying error goes to the server log.
  *
  * This exists because the most common deployment failure is a missing
  * environment variable, and without it the only symptom is a login page that
@@ -21,6 +22,13 @@ import { missingPublicConfig, supabaseServiceKey } from "@/lib/supabase/env";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
+const DATABASE_HINTS = {
+  ok: undefined,
+  not_checked: "Set the missing database variables first.",
+  schema_missing: "The views or procedures are missing, or this account lacks grants on them. Run db/mariadb/setup.sh in the website repository.",
+  unreachable: "The database could not be reached or refused the connection. See the server log.",
+} as const;
+
 export async function GET(request: Request) {
   if (new URL(request.url).searchParams.get("check") !== "config") {
     return NextResponse.json(
@@ -30,36 +38,26 @@ export async function GET(request: Request) {
   }
 
   const adminMissing = missingAdminConfig();
-  const supabaseMissing = [...missingPublicConfig()];
-  if (!supabaseServiceKey()) supabaseMissing.push("SUPABASE_SECRET_KEY");
+  const databaseMissing = missingDatabaseConfig();
 
-  let database = "not checked: Supabase configuration is incomplete";
-  if (supabaseMissing.length === 0) {
-    try {
-      const { createAdminSupabase } = await import("@/lib/supabase/server");
-      const { error } = await createAdminSupabase()
-        .from("callback_requests")
-        .select("id", { count: "exact", head: true });
-
-      database = !error
-        ? "ok"
-        : error.code === "PGRST205"
-          ? "unreachable: table callback_requests does not exist. Run the migration."
-          : `unreachable: ${error.message}`;
-    } catch (error) {
-      database = `unreachable: ${error instanceof Error ? error.message : "unknown error"}`;
-    }
+  let database: keyof typeof DATABASE_HINTS = "not_checked";
+  if (databaseMissing.length === 0) {
+    const { probeDatabase } = await import("@/lib/db/client");
+    const probe = await probeDatabase();
+    database = probe.state;
+    if (probe.detail) console.error(`[admin/health] database ${probe.state}:`, probe.detail);
   }
 
-  const ready = adminMissing.length === 0 && supabaseMissing.length === 0 && database === "ok";
+  const ready = adminMissing.length === 0 && databaseMissing.length === 0 && database === "ok";
 
   return NextResponse.json(
     {
       status: ready ? "ready" : "not_ready",
       timestamp: new Date().toISOString(),
       login: { ready: adminMissing.length === 0, missing: adminMissing },
-      supabase: { ready: supabaseMissing.length === 0, missing: supabaseMissing },
+      databaseConfig: { ready: databaseMissing.length === 0, missing: databaseMissing },
       database,
+      ...(DATABASE_HINTS[database] ? { hint: DATABASE_HINTS[database] } : {}),
     },
     { status: ready ? 200 : 503, headers: { "Cache-Control": "no-store" } },
   );

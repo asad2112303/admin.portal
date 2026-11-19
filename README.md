@@ -5,40 +5,42 @@ website. Deployed separately from that site, on its own domain.
 
 ```
 Public website  →  POST /api/callback-requests
-                →  submit_callback_request()      (the only public write path)
-                →  Supabase: callback_requests
+                →  CALL submit_callback_request()   as eshifa_web (insert only)
+                →  MariaDB: callback_requests
                                     ↑
 This portal     →  /login  →  signed session cookie
-                →  reads and updates with the secret key, server-side
+                →  SELECT … FROM callback_requests_secure      as eshifa_admin
+                →  CALL set_callback_status()                  (row-level policies)
 ```
 
-The two applications share **only the database**. No code, no deployment, and
-no credentials in common beyond the Supabase project itself.
+The two applications share **only the database**, and each connects as its own
+account. No code, no deployment and no credentials in common.
 
 ## Why it is separate
 
 The public site is anonymous, cached and crawled. This portal reads patient
-names and phone numbers and holds the secret key that bypasses Row Level
-Security. Keeping them apart means a mistake in marketing copy cannot expose
-patient data, the secret key is never present in the public deployment at all,
-and this app can be firewalled or IP-restricted without affecting the website.
+names and phone numbers. Keeping them apart means a mistake in marketing copy
+cannot expose patient data, the website's database account can only insert
+(it cannot read a row), and this app can be firewalled or IP-restricted without
+affecting the website.
 
 ## Setup
 
 ### 1. Database
 
-The schema lives with the public website
-(`supabase/migrations/0001_setup.sql`) and only needs running once, from
-either repository.
+MariaDB. The schema, the server security config (encryption at rest, required
+TLS) and the account setup live with the public website, in `db/mariadb/`;
+follow `db/mariadb/README.md` there. `setup.sh` creates this portal's account,
+`eshifa_admin`, and prints nothing: store its password as you create it.
 
 ### 2. Environment
 
 Copy `.env.example` to `.env.local`:
 
 ```bash
-NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_your-key
-SUPABASE_SECRET_KEY=sb_secret_your-key
+DATABASE_SOCKET_PATH=/run/mysqld/mysqld.sock   # or DATABASE_HOST for TCP + TLS
+DATABASE_USER=eshifa_admin
+DATABASE_PASSWORD=<ESHIFA_ADMIN_DB_PASSWORD from setup.sh>
 ```
 
 ### 3. Credentials
@@ -56,6 +58,7 @@ password; it also rotates the session secret, which signs out any open session.
 ```bash
 npm install
 npm run dev        # http://localhost:22431
+npm test           # unit tests
 ```
 
 ### 4. Deploy
@@ -64,9 +67,9 @@ npm run dev        # http://localhost:22431
 ./scripts/push-env-to-vercel.sh
 ```
 
-Uploads all six variables to Vercel and redeploys. The redeploy is required
-rather than optional: `NEXT_PUBLIC_*` values are inlined at build time, so
-setting them in the dashboard has no effect until the project is rebuilt.
+Only for while the portal is still on Vercel: it uploads the database and
+sign-in variables and redeploys. On the Hetzner server the same variables go in
+the server's environment file, and the portal connects over the Unix socket.
 
 To check a deployment:
 
@@ -74,15 +77,17 @@ To check a deployment:
 curl -s https://<your-admin-domain>/api/health?check=config
 ```
 
-`"status":"ready"` means the login will work. Anything else names exactly which
-variables are missing, without disclosing any value.
+`"status":"ready"` means the login will work and the database answers both a
+read and a status-change probe. Anything else names the missing variables and
+gives a fixed category (`not_checked`, `schema_missing`, `unreachable`) — never
+a value, host, account name or error text; the detail goes to the server log.
 
 ## Security
 
 **Authorization is server-side.** Every `/api` handler and the `(protected)`
-layout call `getAdminContext()` before touching data. Middleware only checks
-that a cookie is *present* — it runs on the edge runtime and cannot verify an
-HMAC — so a forged cookie passes middleware and is rejected immediately after.
+layout call `getAdminContext()` before touching data. `src/proxy.ts` (Next.js
+16's name for middleware) only checks that a cookie is *present*, to redirect
+signed-out visitors; a forged cookie passes it and is rejected immediately after.
 
 **The session cookie is signed, HttpOnly and SameSite=Lax.** Its expiry is
 inside the signed payload, not only the cookie's `maxAge`, so it cannot be
@@ -95,9 +100,19 @@ nothing, and the error message never distinguishes them.
 **Failed logins are slowed, not locked out.** With a single shared account,
 lockout would be a free denial of service against the whole portal.
 
-**Row Level Security is on with no policies**, so nothing reachable with the
-publishable key can read these tables. This portal reads with the secret key,
-only after the session has been verified.
+**The database decides what the portal may see.** `eshifa_admin` has no
+privilege on any table. It reads only through the `*_secure` views and changes
+a status only through `set_callback_status()`, and both apply the row-level
+policies in `access_policies` (deny by default; filters by status and age;
+update is a separate permission). A request outside the policy answers 404,
+exactly like one that does not exist. A status change and its timeline entry
+are written in one transaction, so a change can never lack its audit record.
+So there are two independent locks: the session check here, and the policy in
+the database. A bug in this app cannot widen what the database will return.
+
+**Nothing patient-related reaches the logs.** The MariaDB driver appends bound
+values to error messages by default; the pool turns that off (`logParam:
+false`) and log lines strip any SQL text as well.
 
 **Nothing here is indexed** — `robots.txt` disallows everything and the layout
 sets `noindex`.

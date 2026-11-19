@@ -7,14 +7,16 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "set-admin-password": "node scripts/set-admin-password.mjs"
+    "set-admin-password": "node scripts/set-admin-password.mjs",
+    "test": "node --import ./tests/register-ts.mjs --test tests/unit/*.test.mjs",
+    "audit": "npm audit --omit=dev --audit-level=high"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.1.1",
-    "@supabase/supabase-js": "^2.47.10",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.468.0",
+    "mariadb": "^3.5.5",
     "next": "^16.4.6",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

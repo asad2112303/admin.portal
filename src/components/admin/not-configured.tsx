@@ -3,7 +3,7 @@ import { ShieldAlert } from "lucide-react";
 
 /**
  * Dead-end screen for the two states where the dashboard must not render:
- * Supabase is not configured, or the account is not authorized.
+ * the sign-in is not configured, or the account is not authorized.
  * Neither variant reveals anything about the data or the environment.
  */
 export default function NotConfigured({ variant = "setup" }: { variant?: "setup" | "denied" }) {
@@ -23,7 +23,7 @@ export default function NotConfigured({ variant = "setup" }: { variant?: "setup"
         <p className="mb-6 text-base leading-relaxed text-[#444444]">
           {denied
             ? "Your account is not authorized to use the eShifa admin portal. Contact your administrator if you believe this is a mistake."
-            : "Supabase credentials are missing. Add them to the environment and restart the server. See README-ADMIN.md."}
+            : "The sign-in settings (ADMIN_EMAIL, ADMIN_PASSWORD_HASH, ADMIN_SESSION_SECRET) are missing. Add them to the environment and restart the server. GET /api/health?check=config lists what is missing."}
         </p>
 
         <Link
